@@ -15,5 +15,13 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
 	Print,
-	Update { matches: PathBuf },
+	Update {
+		start_id: i32,
+		end_id: i32,
+	},
+	Load {
+		#[arg(value_name = "FILE")]
+		matches: PathBuf,
+		rating_period: i32,
+	},
 }
