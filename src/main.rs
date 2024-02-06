@@ -15,8 +15,8 @@ use chrono::prelude::*;
 use clap::Parser;
 use cli::{Cli, Commands};
 use csv::Reader;
-use data::{create_schema, get_player_id, new_player, Match};
-use rusqlite::{Connection, Result};
+use data::{calculate_rating_period, create_schema, get_player_id, new_player, Match};
+use rusqlite::{params, Connection, Result};
 
 fn main() -> Result<(), Box<dyn Error>> {
 	let cli = Cli::parse();
@@ -45,15 +45,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 			Ok(c) => println!("success loading {c} matches!"),
 			Err(e) => return Err(e),
 		},
-		_ => todo!(),
+		Commands::Update { rating_period } => match update_command(&conn.borrow(), rating_period) {
+			Ok(s) => out.write_all(s.as_bytes()).expect("could not access file!"),
+			Err(e) => return Err(e),
+		},
 	}
 
 	Ok(())
 }
 
 fn print_command(conn: &Connection) -> Result<String> {
-	let mut stmt =
-		conn.prepare("SELECT name, MAX(rating), rd FROM players ORDER BY MAX(rating) DESC;")?;
+	let mut stmt = conn.prepare(
+		"SELECT name, MAX(rating), rd FROM players GROUP BY name ORDER BY MAX(rating) DESC;",
+	)?;
 
 	let mut result = stmt.query([])?;
 
@@ -64,8 +68,8 @@ fn print_command(conn: &Connection) -> Result<String> {
 		row_count += 1;
 
 		let name: String = row.get(0)?;
-		let rating: f64 = row.get(1)?;
-		let rd: f64 = row.get(2)?;
+		let rating: f64 = row.get::<usize, f64>(1)?.round();
+		let rd: f64 = row.get::<usize, f64>(2)?.round();
 
 		string.push_str(&format!("\n{row_count}: {name} — {rating}±{rd}"))
 	}
@@ -79,7 +83,7 @@ fn load_command(
 	conn: &Connection,
 	path: PathBuf,
 	rating_period: i32,
-) -> Result<i32, Box<dyn Error>> {
+) -> Result<usize, Box<dyn Error>> {
 	let mut reader = Reader::from_path(&path)?;
 	let records = reader.records();
 	let mut matches: Vec<Match> = Vec::new();
@@ -137,5 +141,50 @@ fn load_command(
 		)?;
 	}
 
-	Ok(matches.len() as i32)
+	Ok(matches.len())
+}
+
+fn update_command(conn: &Connection, rating_period: i32) -> Result<String, Box<dyn Error>> {
+	let new_ratings = calculate_rating_period(&conn, rating_period)?;
+
+	let mut update_ratings_stmt =
+		conn.prepare("UPDATE players SET rating = ?1, rd = ?2, vol = ?3 WHERE id = ?4;")?;
+
+	let mut string = String::from("# Rating Update\n```");
+
+	for rating in new_ratings.iter() {
+		let mut player_name_stmt =
+			conn.prepare("SELECT name, rating, rd FROM players WHERE id = ?1 GROUP BY name;")?;
+		let player: (String, f64, f64) = player_name_stmt
+			.query_map([rating.0], |row| {
+				Ok((
+					row.get::<usize, String>(0)?,
+					row.get::<usize, f64>(1)?,
+					row.get::<usize, f64>(2)?,
+				))
+			})?
+			.next()
+			.unwrap()
+			.unwrap();
+
+		update_ratings_stmt.execute(params![
+			rating.1.rating,
+			rating.1.deviation,
+			rating.1.volatility,
+			rating.0,
+		])?;
+
+		string.push_str(&format!(
+			"\n{} — {}±{} → {}±{}",
+			player.0,
+			player.1.round(),
+			player.2.round(),
+			rating.1.rating.round(),
+			rating.1.deviation.round()
+		))
+	}
+
+	string.push_str("\n```");
+
+	Ok(string)
 }

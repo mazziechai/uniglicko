@@ -16,8 +16,7 @@ pub struct Cli {
 pub enum Commands {
 	Print,
 	Update {
-		start_id: i32,
-		end_id: i32,
+		rating_period: i32,
 	},
 	Load {
 		#[arg(value_name = "FILE")]
