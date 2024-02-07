@@ -8,6 +8,9 @@ pub struct Cli {
 	#[arg(short, long, value_name = "FILE")]
 	pub output: Option<PathBuf>,
 
+	#[arg(short, long, value_name = "DB")]
+	pub database: PathBuf,
+
 	#[command(subcommand)]
 	pub command: Commands,
 }

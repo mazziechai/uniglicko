@@ -21,7 +21,7 @@ use rusqlite::{params, Connection, Result};
 fn main() -> Result<(), Box<dyn Error>> {
 	let cli = Cli::parse();
 
-	let conn = Rc::new(RefCell::new(Connection::open("database.db")?));
+	let conn = Rc::new(RefCell::new(Connection::open(cli.database)?));
 	create_schema(&mut conn.borrow_mut())?;
 
 	let mut out = match cli.output.as_deref() {
